@@ -2,9 +2,12 @@ module Hello exposing (..)
 
 import Browser exposing (element)
 import Http
-import Html exposing  (Html, text)
+import Html exposing  (Html, text, div, button)
+import Html.Events exposing (onClick)
 import Debug
 import Json.Decode exposing (Decoder, field, float)
+
+-- MAIN
 
 main = element 
   { init = init
@@ -13,30 +16,41 @@ main = element
   , view = view
   }
 
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.none
+-- INIT
 
 init: () -> (Model, Cmd Msg)
 init _ = 
     (Loading, getRates)
 
-view: Model -> Html Msg
-view model = 
-  case model of 
-    Failure ->
-      text "Error"
-    Success float -> 
-      text (Debug.toString float)
-    Loading ->
-      text "Loading"
+-- SUBSCRIPTIONS
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
+
+-- VIEW
 
 type Model 
   = Loading
   | Success Float
   | Failure
 
-type Msg = GotRates (Result Http.Error Float)
+view: Model -> Html Msg
+view model = 
+  case model of 
+    Failure ->
+      div [] [text "Error"]
+    Success float -> 
+      div [] [
+        div [] [text (Debug.toString float)]
+        , button [onClick Refresh ] [ text "Refresh"]
+      ]
+    Loading ->
+      text "Loading"
+
+type Msg 
+  = GotRates (Result Http.Error Float)
+  | Refresh
 
 update: Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -47,6 +61,10 @@ update msg model =
           (Success float, Cmd.none)
         Err _ -> 
           (Failure, Cmd.none)
+    Refresh ->
+      (Loading, getRates)
+
+-- HELPERS
 
 ratesDecoder: Decoder Float
 ratesDecoder = 
