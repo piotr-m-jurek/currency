@@ -1,19 +1,88 @@
-module Currency exposing (Currency(..), Data, Model(..), Msg(..), currencyToString, getRates, init, main, rateEnum, ratesDecoder, subscriptions, update, view)
+module Main exposing
+    ( Currency(..)
+    , Direction(..)
+    , Model
+    , Msg(..)
+    , NetworkData(..)
+    , Rate
+    , Rates
+    , Recieved
+    , converter
+    , directionToString
+    , extractRatesList
+    , getRates
+    , getRawRates
+    , init
+    , initialModel
+    , main
+    , parseBase
+    , ratesSelect
+    , subscriptions
+    , update
+    , view
+    )
 
-import Browser exposing (element)
+import Browser
 import Debug
 import Html exposing (Html, button, div, text)
+import Html.Attributes as Attrs exposing (class)
 import Html.Events exposing (onClick)
 import Http
-import Json.Decode exposing (Decoder, field, float)
+import Json.Decode as JD exposing (Decoder, field, float, int, string)
 
 
 
--- MAIN
+{- TYPES -}
+
+
+type alias Rates =
+    List Rate
+
+
+type alias Rate =
+    ( String, Float )
+
+
+type Currency
+    = Currency String
+
+
+type Val
+    = Val String
+
+
+type alias Recieved =
+    { rates : Rates
+    , base : Currency
+    }
+
+
+type alias Model =
+    { networkData : NetworkData
+    , rateFrom : Maybe String
+    , rateTo : Maybe String
+    , fromValue : Maybe Float
+    , toValue : Maybe Float
+    }
+
+
+type NetworkData
+    = Loading
+    | Success Recieved
+    | Failure Http.Error
+
+
+type Direction
+    = From
+    | To
+
+
+
+{- MAIN -}
 
 
 main =
-    element
+    Browser.element
         { init = init
         , update = update
         , subscriptions = subscriptions
@@ -22,16 +91,26 @@ main =
 
 
 
--- INIT
+{- INITIAL -}
+
+
+initialModel : Model
+initialModel =
+    { networkData = Loading
+    , rateFrom = Nothing
+    , rateTo = Nothing
+    , fromValue = Nothing
+    , toValue = Nothing
+    }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Loading, getRates )
+    ( initialModel, getRates )
 
 
 
--- SUBSCRIPTIONS
+{- SUBSCRIPTIONS -}
 
 
 subscriptions : Model -> Sub Msg
@@ -40,89 +119,66 @@ subscriptions _ =
 
 
 
--- VIEW
-
-
-type Model
-    = Loading
-    | Success Float
-    | Failure
-
-
-type alias Data =
-    { base : Maybe Currency
-    , from : Maybe Currency
-    , to : Maybe Currency
-    }
-
-
-type Currency
-    = Currency String
-
-
-rateEnum : List Currency
-rateEnum =
-    [ Currency "HRK"
-    , Currency "HUF"
-    , Currency "IDR"
-    , Currency "PHP"
-    , Currency "TRY"
-    , Currency "RON"
-    , Currency "ISK"
-    , Currency "SEK"
-    , Currency "THB"
-    , Currency "PLN"
-    , Currency "GBP"
-    , Currency "CAD"
-    , Currency "AUD"
-    , Currency "MYR"
-    , Currency "NZD"
-    , Currency "CHF"
-    , Currency "DKK"
-    , Currency "SGD"
-    , Currency "CNY"
-    , Currency "BGN"
-    , Currency "CZK"
-    , Currency "BRL"
-    , Currency "JPY"
-    , Currency "KRW"
-    , Currency "INR"
-    , Currency "MXN"
-    , Currency "RUB"
-    , Currency "HKD"
-    , Currency "USD"
-    , Currency "ZAR"
-    , Currency "ILS"
-    , Currency "NOK"
-    ]
-
-
-currencyToString : Currency -> String
-currencyToString currency =
-    case currency of
-        Currency string ->
-            string
+{- VIEW -}
 
 
 view : Model -> Html Msg
 view model =
-    case model of
-        Failure ->
-            div [] [ text "Error" ]
-
-        Success float ->
-            div []
-                [ div [] [ text (Debug.toString float) ]
-                , button [ onClick Refresh ] [ text "Refresh" ]
-                ]
-
+    case model.networkData of
         Loading ->
-            text "Loading"
+            div [] [ text "loading..." ]
+
+        Success rates ->
+            converter model rates
+
+        Failure err ->
+            div [] [ text <| Debug.toString err ]
+
+
+converter : Model -> Recieved -> Html Msg
+converter model recieved =
+    div []
+        [ Html.h1 [] [ text (directionToString From) ]
+        , ratesSelect From recieved.rates
+        , Html.input [ Html.Events.onInput OnUpdateFrom ] []
+        , Html.h1 [] [ text (directionToString To) ]
+        , ratesSelect To recieved.rates
+        , Html.input [ Attrs.value <| Debug.toString model.fromValue ] []
+        ]
+
+
+ratesSelect : Direction -> Rates -> Html Msg
+ratesSelect direction rates =
+    Html.select
+        [ Html.Events.onInput (SetComparable direction)
+        ]
+        (List.map
+            optionFromRate
+            rates
+        )
+
+
+optionFromRate : Rate -> Html Msg
+optionFromRate rate =
+    let
+        value =
+            Tuple.first rate
+    in
+    Html.option
+        [ Attrs.value value ]
+        [ text value ]
+
+
+
+{- UPDATE -}
 
 
 type Msg
-    = GotRates (Result Http.Error Float)
+    = GotRates (Result Http.Error Recieved)
     | Refresh
+    | SetComparable Direction String
+    | OnUpdateFrom String
+    | OnUpdateTo String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -130,28 +186,65 @@ update msg model =
     case msg of
         GotRates result ->
             case result of
-                Ok float ->
-                    ( Success float, Cmd.none )
+                Ok val ->
+                    ( { model | networkData = Success val }, Cmd.none )
 
-                Err _ ->
-                    ( Failure, Cmd.none )
+                Err err ->
+                    ( { model | networkData = Failure err }, Cmd.none )
 
         Refresh ->
-            ( Loading, getRates )
+            ( { model | networkData = Loading }, getRates )
+
+        OnUpdateFrom val ->
+            ( { model | fromValue = String.toFloat val }, Cmd.none )
+
+        OnUpdateTo val ->
+            ( { model | toValue = String.toFloat val }, Cmd.none )
+
+        SetComparable dir str ->
+            case dir of
+                From ->
+                    ( { model | rateFrom = Just str }, Cmd.none )
+
+                To ->
+                    ( { model | rateTo = Just str }, Cmd.none )
 
 
 
--- HELPERS
+{- DECODERS -}
 
 
-ratesDecoder : Decoder Float
-ratesDecoder =
-    field "rates" (field "PLN" float)
+getRawRates : Decoder Rates
+getRawRates =
+    JD.field "rates" (JD.keyValuePairs JD.float)
+
+
+extractRatesList : Decoder Recieved
+extractRatesList =
+    JD.map2 Recieved
+        getRawRates
+        parseBase
+
+
+parseBase =
+    JD.map
+        Currency
+        (field "base" string)
 
 
 getRates : Cmd Msg
 getRates =
     Http.get
         { url = "https://api.exchangeratesapi.io/latest"
-        , expect = Http.expectJson GotRates ratesDecoder
+        , expect = Http.expectJson GotRates extractRatesList
         }
+
+
+directionToString : Direction -> String
+directionToString dir =
+    case dir of
+        From ->
+            "From"
+
+        To ->
+            "To"

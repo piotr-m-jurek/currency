@@ -6,3 +6,5 @@ elm-stuff
 repl-temp-*
 api.md
 dist
+
+/.cache/

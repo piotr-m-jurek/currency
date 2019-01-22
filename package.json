@@ -4,14 +4,18 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "npx elm reactor",
-    "build": "npx elm build src/Main.elm --output=dist/main.html"
+    "start": "npx parcel serve index.html --port 4444 --no-cache" ,
+    "build": "npx parcel build index.html"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "elm": "^0.19.0-bugfix2",
-    "elm-format": "^0.8.1"
+    "elm-format": "^0.8.1",
+    "parcel-bundler": "^1.11.0"
+  },
+  "devDependencies": {
+    "elm-hot": "^1.0.1",
+    "node-elm-compiler": "^5.0.1"
   }
 }
