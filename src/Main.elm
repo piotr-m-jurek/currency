@@ -1,10 +1,9 @@
 module Main exposing
-    ( Currency(..)
-    , Direction(..)
+    ( Direction(..)
     , Model
     , Msg(..)
     , NetworkData(..)
-    , Rate
+    , RateEl
     , Rates
     , Recieved
     , converter
@@ -16,7 +15,7 @@ module Main exposing
     , initialModel
     , main
     , parseBase
-    , ratesSelect
+    , ratesToSelectView
     , subscriptions
     , update
     , view
@@ -24,45 +23,38 @@ module Main exposing
 
 import Browser
 import Debug
+import Dict exposing (Dict)
 import Html exposing (Html, button, div, text)
 import Html.Attributes as Attrs exposing (class)
 import Html.Events exposing (onClick)
 import Http
-import Json.Decode as JD exposing (Decoder, field, float, int, string)
+import Json.Decode as JD exposing (Decoder, dict, field, float, int, string)
+import Task
 
 
 
 {- TYPES -}
 
 
-type alias Rates =
-    List Rate
+type Direction
+    = From
+    | To
 
 
-type alias Rate =
-    ( String, Float )
+type alias RateEl =
+    ( Currency, Factor )
 
 
-type Currency
-    = Currency String
 
-
-type Val
-    = Val String
-
-
-type alias Recieved =
-    { rates : Rates
-    , base : Currency
-    }
+{- MODEL -}
 
 
 type alias Model =
     { networkData : NetworkData
-    , rateFrom : Maybe String
-    , rateTo : Maybe String
-    , fromValue : Maybe Float
-    , toValue : Maybe Float
+    , rateFrom : String
+    , rateTo : String
+    , valueFrom : Float
+    , valueTo : Float
     }
 
 
@@ -72,9 +64,218 @@ type NetworkData
     | Failure Http.Error
 
 
-type Direction
-    = From
-    | To
+type alias Recieved =
+    { rates : Rates
+    , base : Currency
+    }
+
+
+type alias Rates =
+    Dict Currency Factor
+
+
+type alias Currency =
+    String
+
+
+type alias Factor =
+    Float
+
+
+
+{- VIEW -}
+
+
+view : Model -> Html Msg
+view model =
+    case model.networkData of
+        Loading ->
+            div [] [ text "loading..." ]
+
+        Success rates ->
+            converter model rates
+
+        Failure err ->
+            div [] [ text <| Debug.toString err ]
+
+
+converter : Model -> Recieved -> Html Msg
+converter { valueTo, valueFrom } { rates } =
+    div []
+        [ Html.h1 [] [ text (directionToString From) ]
+        , ratesToSelectView From rates
+        , Html.input
+            [ Html.Events.onInput (UpdateInput From rates)
+            , Attrs.value <| String.fromFloat <| valueFrom
+            ]
+            []
+        , Html.h1 [] [ text (directionToString To) ]
+        , ratesToSelectView To rates
+        , Html.input
+            [ Html.Events.onInput (UpdateInput To rates)
+            , Attrs.value <| String.fromFloat <| valueTo
+            ]
+            []
+        ]
+
+
+ratesToSelectView : Direction -> Rates -> Html Msg
+ratesToSelectView direction rates =
+    Html.select
+        [ Html.Events.onInput (SetComparable direction)
+        ]
+        (rates
+            |> Dict.toList
+            |> List.map optionFromRateView
+        )
+
+
+optionFromRateView : RateEl -> Html Msg
+optionFromRateView rate =
+    let
+        value =
+            rate |> Tuple.first
+    in
+    Html.option
+        [ Attrs.value value ]
+        [ text value ]
+
+
+computeValueTo : Rates -> Model -> Float -> Float
+computeValueTo rates model val =
+    -- TODO:
+    let
+        fromFactor =
+            factorByCurrency rates model.rateFrom
+
+        toFactor =
+            factorByCurrency rates model.rateTo
+
+        value =
+            Just val
+    in
+    Maybe.map2
+        (/)
+        value
+        fromFactor
+        |> Maybe.map2 (*) toFactor
+        |> Maybe.withDefault 0
+
+
+factorByCurrency : Rates -> Currency -> Maybe Factor
+factorByCurrency rates currency =
+    rates |> Dict.get currency
+
+
+
+{- UPDATE -}
+
+
+type Msg
+    = GotRates (Result Http.Error Recieved)
+    | Refresh
+    | SetComparable Direction String
+    | UpdateInput Direction Rates String
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        GotRates result ->
+            case result of
+                Ok val ->
+                    ( { model
+                        | networkData = Success val
+                        , rateFrom = val.rates |> Dict.keys |> List.head |> Maybe.withDefault ""
+                        , rateTo = val.rates |> Dict.keys |> List.head |> Maybe.withDefault ""
+                      }
+                    , Cmd.none
+                    )
+
+                Err err ->
+                    ( { model | networkData = Failure err }, Cmd.none )
+
+        Refresh ->
+            ( { model | networkData = Loading }, getRates )
+
+        UpdateInput dir rates val ->
+            let
+                value =
+                    computeValueTo rates model (stringToFloat val)
+            in
+            case dir of
+                From ->
+                    ( { model
+                        | valueFrom = value
+                        , valueTo = value
+                      }
+                    , Cmd.none
+                    )
+
+                To ->
+                    ( { model
+                        | valueTo = value
+                        , valueFrom = value
+                      }
+                    , Cmd.none
+                    )
+
+        SetComparable dir str ->
+            case dir of
+                From ->
+                    ( { model | rateFrom = str }, Cmd.none )
+
+                To ->
+                    ( { model | rateTo = str }, Cmd.none )
+
+
+stringToFloat : String -> Float
+stringToFloat str =
+    case String.toFloat str of
+        Just val ->
+            val
+
+        Nothing ->
+            0
+
+
+
+{- DECODERS -}
+
+
+getRawRates : Decoder Rates
+getRawRates =
+    JD.field "rates" <| dict float
+
+
+extractRatesList : Decoder Recieved
+extractRatesList =
+    JD.map2 Recieved
+        getRawRates
+        parseBase
+
+
+parseBase : Decoder Currency
+parseBase =
+    field "base" string
+
+
+getRates : Cmd Msg
+getRates =
+    Http.get
+        { url = "https://api.exchangeratesapi.io/latest"
+        , expect = Http.expectJson GotRates extractRatesList
+        }
+
+
+directionToString : Direction -> String
+directionToString dir =
+    case dir of
+        From ->
+            "From"
+
+        To ->
+            "To"
 
 
 
@@ -97,10 +298,10 @@ main =
 initialModel : Model
 initialModel =
     { networkData = Loading
-    , rateFrom = Nothing
-    , rateTo = Nothing
-    , fromValue = Nothing
-    , toValue = Nothing
+    , rateFrom = ""
+    , rateTo = ""
+    , valueFrom = 0
+    , valueTo = 0
     }
 
 
@@ -116,135 +317,3 @@ init _ =
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
-
-
-
-{- VIEW -}
-
-
-view : Model -> Html Msg
-view model =
-    case model.networkData of
-        Loading ->
-            div [] [ text "loading..." ]
-
-        Success rates ->
-            converter model rates
-
-        Failure err ->
-            div [] [ text <| Debug.toString err ]
-
-
-converter : Model -> Recieved -> Html Msg
-converter model recieved =
-    div []
-        [ Html.h1 [] [ text (directionToString From) ]
-        , ratesSelect From recieved.rates
-        , Html.input [ Html.Events.onInput OnUpdateFrom ] []
-        , Html.h1 [] [ text (directionToString To) ]
-        , ratesSelect To recieved.rates
-        , Html.input [ Attrs.value <| Debug.toString model.fromValue ] []
-        ]
-
-
-ratesSelect : Direction -> Rates -> Html Msg
-ratesSelect direction rates =
-    Html.select
-        [ Html.Events.onInput (SetComparable direction)
-        ]
-        (List.map
-            optionFromRate
-            rates
-        )
-
-
-optionFromRate : Rate -> Html Msg
-optionFromRate rate =
-    let
-        value =
-            Tuple.first rate
-    in
-    Html.option
-        [ Attrs.value value ]
-        [ text value ]
-
-
-
-{- UPDATE -}
-
-
-type Msg
-    = GotRates (Result Http.Error Recieved)
-    | Refresh
-    | SetComparable Direction String
-    | OnUpdateFrom String
-    | OnUpdateTo String
-
-
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case msg of
-        GotRates result ->
-            case result of
-                Ok val ->
-                    ( { model | networkData = Success val }, Cmd.none )
-
-                Err err ->
-                    ( { model | networkData = Failure err }, Cmd.none )
-
-        Refresh ->
-            ( { model | networkData = Loading }, getRates )
-
-        OnUpdateFrom val ->
-            ( { model | fromValue = String.toFloat val }, Cmd.none )
-
-        OnUpdateTo val ->
-            ( { model | toValue = String.toFloat val }, Cmd.none )
-
-        SetComparable dir str ->
-            case dir of
-                From ->
-                    ( { model | rateFrom = Just str }, Cmd.none )
-
-                To ->
-                    ( { model | rateTo = Just str }, Cmd.none )
-
-
-
-{- DECODERS -}
-
-
-getRawRates : Decoder Rates
-getRawRates =
-    JD.field "rates" (JD.keyValuePairs JD.float)
-
-
-extractRatesList : Decoder Recieved
-extractRatesList =
-    JD.map2 Recieved
-        getRawRates
-        parseBase
-
-
-parseBase =
-    JD.map
-        Currency
-        (field "base" string)
-
-
-getRates : Cmd Msg
-getRates =
-    Http.get
-        { url = "https://api.exchangeratesapi.io/latest"
-        , expect = Http.expectJson GotRates extractRatesList
-        }
-
-
-directionToString : Direction -> String
-directionToString dir =
-    case dir of
-        From ->
-            "From"
-
-        To ->
-            "To"
