@@ -105,15 +105,15 @@ converter { valueTo, valueFrom } { rates } =
         [ Html.h1 [] [ text (directionToString From) ]
         , ratesToSelectView From rates
         , Html.input
-            [ Html.Events.onInput (UpdateInput From rates)
-            , Attrs.value <| String.fromFloat <| valueFrom
+            [ Html.Events.onInput (OnInput From rates)
+            , Attrs.value <| String.fromFloat valueFrom
             ]
             []
         , Html.h1 [] [ text (directionToString To) ]
         , ratesToSelectView To rates
         , Html.input
-            [ Html.Events.onInput (UpdateInput To rates)
-            , Attrs.value <| String.fromFloat <| valueTo
+            [ Html.Events.onInput (OnInput To rates)
+            , Attrs.value <| String.fromFloat valueTo
             ]
             []
         ]
@@ -143,7 +143,6 @@ optionFromRateView rate =
 
 computeValueTo : Rates -> Model -> Float -> Float
 computeValueTo rates model val =
-    -- TODO:
     let
         fromFactor =
             factorByCurrency rates model.rateFrom
@@ -154,10 +153,7 @@ computeValueTo rates model val =
         value =
             Just val
     in
-    Maybe.map2
-        (/)
-        value
-        fromFactor
+    Maybe.map2 (/) value fromFactor
         |> Maybe.map2 (*) toFactor
         |> Maybe.withDefault 0
 
@@ -175,7 +171,7 @@ type Msg
     = GotRates (Result Http.Error Recieved)
     | Refresh
     | SetComparable Direction String
-    | UpdateInput Direction Rates String
+    | OnInput Direction Rates String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -198,24 +194,24 @@ update msg model =
         Refresh ->
             ( { model | networkData = Loading }, getRates )
 
-        UpdateInput dir rates val ->
+        OnInput dir rates input ->
             let
                 value =
-                    computeValueTo rates model (stringToFloat val)
+                    computeValueTo rates model (stringToFloat input)
             in
             case dir of
                 From ->
                     ( { model
-                        | valueFrom = value
-                        , valueTo = value
+                        | valueTo = value
+                        , valueFrom = stringToFloat input
                       }
                     , Cmd.none
                     )
 
                 To ->
                     ( { model
-                        | valueTo = value
-                        , valueFrom = value
+                        | valueFrom = value
+                        , valueTo = stringToFloat input
                       }
                     , Cmd.none
                     )
