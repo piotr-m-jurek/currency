@@ -1,0 +1,32 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-size: 20px;
+  font-family: Arial, Helvetica, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #eee;
+}
+
+.Counter {
+  background: white;
+  display: flex;
+  padding: 16px;
+  box-shadow: 0 0 15px -5px rgba(0, 0, 0, 0.3);
+}
+.Counter > * + * {
+  margin-left: 8px;
+}
+.Counter__Buttons {
+  line-height: 20px;
+}
+.Counter__Buttons > * + * {
+  margin-left: 4px;
+}
+.Counter__Buttons button {
+  border: 1px solid rgb(92, 92, 92);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.3);
+  border-radius: 2px;
+}

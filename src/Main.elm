@@ -24,11 +24,26 @@ module Main exposing
 import Browser
 import Debug
 import Dict exposing (Dict)
-import Html exposing (Html, button, div, text)
-import Html.Attributes as Attrs exposing (class)
-import Html.Events exposing (onClick)
+import Html
+    exposing
+        ( Html
+        , div
+        , h2
+        , input
+        , select
+        , text
+        )
+import Html.Attributes as Attrs
+import Html.Events as Events
 import Http
-import Json.Decode as JD exposing (Decoder, dict, field, float, int, string)
+import Json.Decode as JD
+    exposing
+        ( Decoder
+        , dict
+        , field
+        , float
+        , string
+        )
 import Task
 
 
@@ -92,8 +107,8 @@ view model =
         Loading ->
             div [] [ text "loading..." ]
 
-        Success rates ->
-            converter model rates
+        Success recieved ->
+            converter model recieved
 
         Failure err ->
             div [] [ text <| Debug.toString err ]
@@ -102,27 +117,31 @@ view model =
 converter : Model -> Recieved -> Html Msg
 converter { valueTo, valueFrom } { rates } =
     div []
-        [ Html.h1 [] [ text (directionToString From) ]
-        , ratesToSelectView From rates
-        , Html.input
-            [ Html.Events.onInput (OnInput From rates)
-            , Attrs.value <| String.fromFloat valueFrom
+        [ div [ Attrs.class "from" ]
+            [ h2 [] [ text (directionToString From) ]
+            , ratesToSelectView From rates
+            , input
+                [ Events.onInput (OnInput From rates)
+                , Attrs.value <| String.fromFloat valueFrom
+                ]
+                []
             ]
-            []
-        , Html.h1 [] [ text (directionToString To) ]
-        , ratesToSelectView To rates
-        , Html.input
-            [ Html.Events.onInput (OnInput To rates)
-            , Attrs.value <| String.fromFloat valueTo
+        , div [ Attrs.class "to" ]
+            [ h2 [] [ text (directionToString To) ]
+            , ratesToSelectView To rates
+            , input
+                [ Events.onInput (OnInput To rates)
+                , Attrs.value <| String.fromFloat valueTo
+                ]
+                []
             ]
-            []
         ]
 
 
 ratesToSelectView : Direction -> Rates -> Html Msg
 ratesToSelectView direction rates =
-    Html.select
-        [ Html.Events.onInput (SetComparable direction)
+    select
+        [ Events.onInput (SetFactor direction)
         ]
         (rates
             |> Dict.toList
@@ -168,22 +187,28 @@ factorByCurrency rates currency =
 
 
 type Msg
-    = GotRates (Result Http.Error Recieved)
-    | Refresh
-    | SetComparable Direction String
+    = Refresh
+    | SuccessfullFetch (Result Http.Error Recieved)
+    | SetFactor Direction String
     | OnInput Direction Rates String
+    | UpdateValid String
+    | UpdateInvalid String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotRates result ->
+        SuccessfullFetch result ->
             case result of
                 Ok val ->
+                    let
+                        firstRate =
+                            val.rates |> Dict.keys |> List.head |> Maybe.withDefault ""
+                    in
                     ( { model
                         | networkData = Success val
-                        , rateFrom = val.rates |> Dict.keys |> List.head |> Maybe.withDefault ""
-                        , rateTo = val.rates |> Dict.keys |> List.head |> Maybe.withDefault ""
+                        , rateFrom = firstRate
+                        , rateTo = firstRate
                       }
                     , Cmd.none
                     )
@@ -216,13 +241,19 @@ update msg model =
                     , Cmd.none
                     )
 
-        SetComparable dir str ->
+        SetFactor dir str ->
             case dir of
                 From ->
                     ( { model | rateFrom = str }, Cmd.none )
 
                 To ->
                     ( { model | rateTo = str }, Cmd.none )
+
+        UpdateValid _ ->
+            ( model, Cmd.none )
+
+        UpdateInvalid _ ->
+            ( model, Cmd.none )
 
 
 stringToFloat : String -> Float
@@ -260,7 +291,7 @@ getRates : Cmd Msg
 getRates =
     Http.get
         { url = "https://api.exchangeratesapi.io/latest"
-        , expect = Http.expectJson GotRates extractRatesList
+        , expect = Http.expectJson SuccessfullFetch extractRatesList
         }
 
 

@@ -1,21 +1,18 @@
 {
-  "name": "currency",
+  "name": "elm-bem",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "npx parcel serve index.html --port 4444 --no-cache" ,
-    "build": "npx parcel build index.html"
+    "start": "npx elm-live src/Main.elm -e node_modules/.bin/elm --open --start-page=index.html -- --output=elm.js",
+    "build": "npx elm make src/Main.elm --output ./index.js"
   },
+  "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "elm": "^0.19.0-bugfix2",
+    "elm": "^0.19.0-bugfix6",
     "elm-format": "^0.8.1",
-    "parcel-bundler": "^1.11.0"
-  },
-  "devDependencies": {
-    "elm-hot": "^1.0.1",
-    "node-elm-compiler": "^5.0.1"
+    "elm-live": "^3.4.0"
   }
 }
